@@ -3,12 +3,12 @@
 
 # 1. donload genome from UCSC database http://hgdownload.cse.ucsc.edu/goldenPath/canFam3/bigZips/canFam3.fa.gz
 # dog whole genome canFam3.fa in a comparessed format
-# 2. unzip gz file 
+wget http://hgdownload.cse.ucsc.edu/goldenPath/canFam3/bigZips/canFam3.fa.gz
 
+# 2. unzip gz file 
 gunzip canFam3.fa.gz
 
-# 3. build the index for the reference genome
-
+# 3. build the index for the reference genome or directly download it from illumina
 bowtie2-build canFam3.fa
 
 # 4. load tophat & bowtie2
@@ -27,7 +27,7 @@ tophat -r 200 -p 4 -o /fs/lustre/wrk/kzhang/samples/dog_210_L6/ canFam3.fa FCC5F
 
 
 # 6. assemble transcriptoms with cufflinks
-
+### performed in each directories
 ~/software/cufflinks-2.2.1/cufflinks -o dog207 -p 8 accepted_hits.bam 
 ~/software/cufflinks-2.2.1/cufflinks -o dog208 -p 8 accepted_hits.bam 
 ~/software/cufflinks-2.2.1/cufflinks -o dog209 -p 8 accepted_hits.bam 
