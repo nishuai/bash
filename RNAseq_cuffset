@@ -1,4 +1,5 @@
 ## this is a typical pipeline for RNA-seq gene differential expression analysis with Cufflinks
+## not ready to run, just the critical steps
 ## softwares used: Bowtie2, tophat(inside bowtie2), cufflinks
 
 # 1. donload genome from UCSC database http://hgdownload.cse.ucsc.edu/goldenPath/canFam3/bigZips/canFam3.fa.gz
