@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #This removes reads of a below a certain length from paired read files in fastq format (e.g., R1 and R2 from the same library)
-
+#from http://seqanswers.com/forums/showthread.php?t=31845
 # Usage: $ bash nixshorts_PE [input fastqR1] [input fastqR2] [minimum read length to keep] 
 
 # PROCESS:
