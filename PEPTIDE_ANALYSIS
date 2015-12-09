@@ -1,0 +1,23 @@
+library(RBDmap)
+library(Biobase)
+library(Biostrings)
+library(limma)
+
+###import database for all known proteins from uniprot
+setwd('C://Users/sni/Documents/R/rbp_alfredo/')
+load('C://Users/sni/Documents/bernd/peptideMappingForNi/singleRNAcapture/data/ProtFeatures.rda')
+UniprotSeq = ProtFeatures$ProtSeq
+ProtID2ENSGID = ProtFeatures$GeneName
+load("C://Users/sni/Documents/bernd/peptideMappingForNi/singleRNAcapture/data/Index.rda")
+
+###read peptide files
+T = read.table("SubT1 peptides.txt", sep="\t",
+               comment.char="",quote="", header=TRUE,stringsAsFactors=FALSE)
+peptide_seq=T$Sequence[T$Potential.contaminant=='' & T$Reverse=='']
+####map the peptides onto the protein sequence database, get the corresponding protein ID
+Pep2Uniprot = mapPeptides(PeptideSet=peptide_seq, UniprotSeq, 
+                            Index=Index,verbose=FALSE)
+####map back the protein IDs to Ensembl gene IDs, remove peptide records that mapped to more than 1 gene
+  
+  
+####make a list of representative protein IDs for the list of ensembl gene IDs
