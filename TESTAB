@@ -1,0 +1,55 @@
+\documentclass{article}
+
+\title{The analysis of Post-translational Modifications in RNA Binding Proteins in Cancer}
+\author{Ni Shuai}
+
+\begin{document}
+\SweaveOpts{concordance=TRUE}
+\maketitle
+
+\section*{Introduction}
+
+\subsection*{The role of RNA binding proteins in RNA activity}
+
+The process of translating mRNA into working polypeptides is an essential step in central dogma. This translational process often starts with per-mature mRNAs binding to proteins that determins the fate of mRNAs. \\
+
+\noindent After the transcription from a DNA template, the nascent mRNAs are packaged into small complexes with a great number of proteins, this mRNA-protein complex structure is often called Messenger ribonucleoprotein complex (mRNP). The proteins in the complex assist various activities of mRNA in cell such as localization, translation and decay.[1][2]
+
+\subsection*{Post-translational modifications of proteins}
+
+During and after a protein is synthesized, it undergos some covalent and generally enzymatic modification on its amino acids to form a mature protein product. The modifications extend the standard composition of 20 amino acids by introducing new functional groups such as phosphate, acetate, amide groups or methyl groups to its side chains of amino acids. In this way, protein activities can be regulated by PTMs.[3]\\
+\subsection*{PTMs in RBPs as a potential cause of cancer}
+
+\noindent RBP control most of the mRNA activities, Therefore the modification of RBP may be passed on to RNA level, causing abnormalities in mRNA behaiour and rendering proteins to a pathological state. It is found that hange of phosphoserine to tyrosine at amino acid 1217 of an RBP BRCA1 (breast cancer 1 early-onset protein) 
+increases the predisposition towards getting breast and ovarian cancer.[4][5] It is also reported that many disease-associated mutations are found in adjacent to or at the PTM sites in RBPs. [5] Therefore, it is highly thatdeleterious PTMs may make a contribution to cancer progression.
+
+
+\section{Background}
+
+Recent research has shown that the expression of RBPs are generally significantly higher compared with other classes of genes, implying the importance of RBP in cellular functions. The research also found that many RBPs are dysregulated across cancers and a subset of them are strongly upregulated across a majority of cancers.[6] However, there is little information about the causative relationship or mechanistic background between those RBPs and cancer. Another study also shows that some of the mutations in RBPs are associated with cancer.[5] 
+
+Although previous studies demonstrated that RBPs play a pivotal role in the progression in some cancer types, the studies lack a proper comparison or have a very restricted sample to compare. In order to gain a better understanding of the role of RBPs in various types of cancer, a systematic analysis of PTMs on all RBPs observed in different stages of cancer cells has to be done. 
+
+  \begin{thebibliography}{1}
+
+  \bibitem{notes} Takbum Ohn {\em RNA granules: post-transcriptional
+and epigenetic modulators of gene
+expression}  2010.
+
+  \bibitem{notes} Chantelle F. Sephton {\em The function of RNA-binding proteins at the synapse:
+implications for neurodegeneration}  2015.
+
+  \bibitem{impj}  Radha G. Krishna {\em Post-Translational Modifications of Proteins, Methods in Protein Sequence Analysis} 1993.
+
+  \bibitem{norman} Easton, D.F. {\em A systematic genetic assessment of 1,433
+sequence variants of unknown clinical significance in the BRCA1 and
+BRCA2 breast cancer-predisposition genes} 2007.
+
+  \bibitem{fo} Alfredo Castello {\em RNA-binding proteins in Mendelian
+disease} 2013.
+  \bibitem{sdf} Bobak Kechavarzi {\em Dissecting the expression landscape of RNA-binding proteins in human cancers} 2014
+  \end{thebibliography}
+  
+
+
+\end{document}
