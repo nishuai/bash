@@ -1,0 +1,716 @@
+\documentclass{article}
+<<Opts,include=FALSE>>=
+library(knitr)
+opts_chunk$set(concordance=TRUE, 
+               resize.width="0.5\\textwidth", 
+               fig.align='center',
+               dev=c('pdf','png'),
+               cache=TRUE,
+               cache.path='cache/',
+               tidy = FALSE)
+@
+\title{\textsf{\textbf{Comparison of protein intensity in cells infected with Sindbis virus in different states}}}
+\author{Shuai Ni and Bernd Fischer\\[1em]
+German Cancer Research Center (DKFZ),\\ Heidelberg, Germany\\
+\texttt{n.shuai@dkfz.de}}
+
+\begin{document}
+\maketitle
+\tableofcontents
+
+\section{Read data}
+<<packages_functions,echo=FALSE>>=
+
+###import database of all proteins from uniprot   
+library(VennDiagram)
+library(Biobase)
+library(limma)
+library(ggplot2)
+library(RBDmap)
+library(hwriter)
+library(RColorBrewer)
+library(Biostrings)
+library(pheatmap)
+load(file.path('inputdata','enigmRBP.rda'))
+load(file.path('inputdata','ProtFeatures.rda'))
+load(file.path('inputdata','Index.rda'))
+load(file.path('inputdata','ENSG2category.rda'))
+load(file.path('inputdata','ENSGannotation.rda'))
+SV_seq=readAAStringSet(file.path('inputdata','prot_sequences.txt'))
+source(file.path('R','doGSEA.R'))
+source(file.path('R','hwriteSidebar.R'))
+@
+
+\subsection{Read peptide seuqnces and intensity values from two datasets}
+<<read_data>>=
+input_raw= read.table(
+  file.path("inputdata",'modificationSpecificPeptides.txt'),
+                      sep="\t", comment.char="",quote="", 
+  header=TRUE, stringsAsFactors=FALSE)
+@
+
+\subsection{Remove comtaminant and decoy peptide sequences}
+<<>>=
+input_raw=input_raw[input_raw$Potential.contaminant=='' 
+  &input_raw$Reverse=='',]
+@
+
+\noindent Specify sample names and remove unused columns from peptide table.
+<<>>=
+sample_names=c('hour18','hour4','mock')
+input_raw = 
+  input_raw[,c(grep("Sequence",colnames(input_raw)),
+                   grep("Intensity.",colnames(input_raw)))]
+input_raw=input_raw[,c(1,6:8, 10:12, 14:16)]
+input_raw[,c(2:10)][input_raw[,c(2:10)]<1]=NA
+input_raw[,c(2:10)]=log2(input_raw[,c(2:10)])
+input_raw=input_raw[,c(1,4,3,2,5,7,6,9,8,10)]
+names(input_raw)=
+  c('sequences',paste(sample_names,rep(1:3,each=3),sep='_'))
+@
+
+
+\section{Map the sequences to the protein sequence database}
+ \noindent A function to map protein IDs to Ensembl gene IDs
+<<Fun_mapProtein2Gene>>=
+MapProt2Ensg=function(protein_list){
+  ###MapProt2Ensg maps the peptide-mapping proteins to genes
+  ###and return a list of mapped genes
+  lapply(protein_list,function(x) 
+    { y=unname(ProtFeatures$GeneName[x])
+  unique(y[!is.na(y)])})
+}
+@
+
+\noindent Extract single matched peptides (peptides can only be mapped to a single gene).
+The name of the viral proteins is kept in the conversion from protein id to ENSEMBL gene id.
+<<single_mapped_peps>>=
+ProtIDs=mapPeptides(PeptideSet=input_raw$sequence, 
+                    c(ProtFeatures$ProtSeq,SV_seq),
+                          verbose=FALSE)
+Ensgid=MapProt2Ensg(ProtIDs)
+Ensgid[grep('SV_', ProtIDs)]=ProtIDs[grep('SV_', ProtIDs)]
+@
+
+\noindent Mapping summary of two datasets.
+
+<<NumberOfPeptideMatches, fig.path='peptideMapping/'>>=
+df=as.data.frame(table(listLen(Ensgid)))
+colnames(df)=c('nr_protein_matches','nr_peptides')
+p=ggplot(df, aes(x=nr_protein_matches,y=nr_peptides,
+                 fill=factor(nr_protein_matches)))
+p+geom_bar(stat='identity')+theme(legend.position = "none") +
+geom_text(aes(label = nr_peptides), size = 3)
+
+@
+The x axis represents the number protein(s) a peptide mapped to, the y axis represents the total number of peptides. Peptides mapped to more than one gene are discarded for downstream analysis.
+
+<<PeptideMappingWebpage,echo=FALSE,results='hide'>>=
+page = openPage(file.path('peptideMapping',"index.html"),link.css="hwriter.css")
+file.copy(system.file("images","hwriter.css",package="hwriter"),
+          file.path("peptideMapping","hwriter.css"))
+hwriteSidebar(position = c("left"),
+              link = c("../mainmenu.html"), size = 15, margin = 1, page = page)
+
+hwrite("Peptide mapping", heading=1,page=page)
+M = matrix(c("NumberOfPeptideMatches-1.png"),ncol=1)
+L = matrix(c("NumberOfPeptideMatches-1.pdf"),ncol=1)
+hwriteImage(M, link=L,page=page)
+
+closePage(page,splash=FALSE)
+@
+
+\subsection{Aggregate mean intensity values for each ENSEMBL gene ID}
+The mean intensity values of peptides mapped to the same gene are calculated to represent the intensity of that protein.
+<<aggregateMean>>=
+
+Ensgid[listLen(Ensgid)!= 1]=NA
+Ensgid=unlist(Ensgid)
+input_raw=cbind(input_raw,Ensgid=Ensgid)
+proteins=aggregate(input_raw[,2:10], 
+   by=list(input_raw$Ensgid), mean, na.rm=TRUE)
+names(proteins)[1]='ENSGid'
+proteins$symbol=unname(unlist(
+  sapply(proteins$ENSGid, 
+         function(x) {if 
+           (any(which(ProtFeatures$GeneName == x))) 
+           ProtFeatures$Symbol[which(ProtFeatures$GeneName == x)]
+              else NA})))
+proteins$symbol[grep('SV_',proteins$ENSGid)]=
+  as.character(proteins$ENSGid[grep('SV_',proteins$ENSGid)])
+
+proteins$Know_RBP=ifelse(
+  proteins$ENSGid %in% enigmRBP$Ensembl.gene.ID, 'known_RBP', 'no')
+proteins=proteins[,c(1,11,12,2:10)]
+proteins=data.frame(proteins,stringsAsFactors = FALSE )
+row.names(proteins)=NULL
+@
+\section{Heatmap for protein intensity profiles and line chart for the intensity of proteins in each time point}
+
+\subsection{Heatmat for protein intensity profiles}
+\noindent Heatmap for proteins have no missing measurements, normalized by replicates
+<<heatmapValue, fig.path='Heatmap/'>>=
+proteins_full=proteins[!apply(proteins[,4:12],1, 
+                              function(x) any(is.na(x))),]
+row.names(proteins_full)=
+  proteins$symbol[!apply(proteins[,4:12],1, 
+                         function(x) any(is.na(x)))]
+rep1_mean=mean(colMeans(proteins_full[,4:6]))
+rep2_mean=mean(colMeans(proteins_full[,7:9]))
+rep3_mean=mean(colMeans(proteins_full[,10:12]))
+mean_all=mean(c(rep1_mean,rep2_mean,rep3_mean))
+intensity=cbind(proteins_full[,4:6]+mean_all-rep1_mean,
+  proteins_full[,7:9]+mean_all-rep2_mean,
+  proteins_full[,10:12]+mean_all-rep3_mean)
+intensity=intensity-mean(colMeans(intensity))
+intensity=cbind(intensity[,1]+intensity[,4]+intensity[,7],
+                intensity[,2]+intensity[,5]+intensity[,8],
+                intensity[,3]+intensity[,6]+intensity[,9])
+intensity=cbind(intensity[,1]-intensity[,3],
+                intensity[,2]-intensity[,3])
+
+colnames(intensity)=c('hour18-mock','hour4-mock')
+row.names(intensity)=proteins_full$symbol
+pheatmap(t(intensity), cluster_rows = FALSE,
+         color = rev(brewer.pal(n = 7,  name ='RdBu')))
+@
+
+\noindent Heatmap for records have missing values, normalized by replicates. The missing intensity values are replaced by the minimum value of the intensity table.
+<<heatmapMissing, fig.path='Heatmap/'>>=
+proteins_mis=proteins[apply(proteins[,4:12],1, 
+                            function(x) any(is.na(x))),]
+row.names(proteins_mis)=
+  proteins$symbol[apply(proteins[,4:12],1, 
+                        function(x) any(is.na(x)))]
+proteins_mis[is.na(proteins_mis)]=min(proteins_mis[,4:12],
+                                      na.rm=TRUE)
+rep1_mean=mean(colMeans(proteins_mis[,4:6]))
+rep2_mean=mean(colMeans(proteins_mis[,7:9]))
+rep3_mean=mean(colMeans(proteins_mis[,10:12]))
+mean_all=mean(c(rep1_mean,rep2_mean,rep3_mean))
+intensity=cbind(proteins_mis[,4:6]+mean_all-rep1_mean,
+  proteins_mis[,7:9]+mean_all-rep2_mean,
+  proteins_mis[,10:12]+mean_all-rep3_mean)
+intensity=intensity-mean(colMeans(intensity))
+intensity=cbind(intensity[,1]+intensity[,4]+intensity[,7],
+                intensity[,2]+intensity[,5]+intensity[,8],
+                intensity[,3]+intensity[,6]+intensity[,9])
+intensity=cbind(intensity[,1]-intensity[,3],
+                intensity[,2]-intensity[,3])
+row.names(intensity)=proteins_mis$symbol
+colnames(intensity)=c('hour18-mock','hour4-mock')
+
+pheatmap(t(intensity), cluster_rows = FALSE,
+         color = rev(brewer.pal(n = 7,  name ='RdBu')))
+@
+
+\noindent Heatmap of proteins with missing values by counting. The count of successfully detected intensity values for each protein in 3 different modes (mock, hour4 and hour18) are calculated, the count can vary from 0 (not detected in all 3 replicates)  to 3 (detected in all 3 replicates). The count table is used to draw the heatmap. A hierchical clustering of proteins is performed based on the similarity of intensity counts for each protein in 3 modes (mock, hour4 and hour18).
+<<heatmapCount, fig.path='Heatmap/'>>=
+proteins_count=proteins[,4:12][apply(proteins[,4:12],1, 
+                                     function(x) any(is.na(x))),]
+row.names(proteins_count)=
+  proteins$symbol[apply(proteins[,4:12],1, 
+                        function(x) any(is.na(x)))]
+proteins_count=apply(proteins_count, 1, function(x) 
+  cbind(sum(!is.na(x[c(1,4,7)])), 
+        sum(!is.na(x[c(2,5,8)])), sum(!is.na(x[c(3,6,9)]))))
+proteins_count=t(proteins_count)
+intensity=cbind(proteins_count[,1]-proteins_count[,3],
+                proteins_count[,2]-proteins_count[,3])
+colnames(intensity)=c('hour18-mock','hour4-mock')
+pheatmap(t(intensity), cluster_rows = FALSE, 
+         color = rev(brewer.pal(n = 7,  name ='RdBu')))
+@
+
+<<heatmapWebpage, results='hide', echo=FALSE>>=
+page=openPage(file.path(dirHeatmap,'index.html'), link.css='hwriter.css')
+file.copy(system.file('images','hwriter.css', package='hwriter'),
+          file.path(dirHeatmap,'hwriter.css'))
+hwriteSidebar(position = c("left"),
+              link = c("../mainmenu.html"), size = 15, margin = 1, page = page)
+listedfiles=list.files(path=file.path(dirHeatmap))
+hwrite("Intensity overview and Heatmap for Proteins", heading=1,page=page)
+  hwrite('Heatmap for proteins have no missing measurements, normalized by replicates', heading=3,page=page)
+  M = matrix(listedfiles[grep('Value.*png', listedfiles)],ncol=1)
+  L = matrix(listedfiles[grep('Value.*pdf', listedfiles)],ncol=1)
+  hwriteImage(M, link=L,page=page)
+  hwrite('Heatmap for records have missing values', heading=3,page=page)
+  M = matrix(listedfiles[grep('Missing.*png', listedfiles)],ncol=1)
+  L = matrix(listedfiles[grep('Missing.*pdf', listedfiles)],ncol=1)
+  hwriteImage(M, link=L,page=page)
+  hwrite('Heatmap for records have missing values by counting', heading=3,page=page)
+  M = matrix(listedfiles[grep('Count.*png', listedfiles)],ncol=1)
+  L = matrix(listedfiles[grep('Count.*pdf', listedfiles)],ncol=1)
+  hwriteImage(M, link=L,page=page)
+  
+closePage(page,splash=FALSE)
+@
+
+
+\subsection{Line charts for protein intensities with no missing intensities}
+The ion intensities of each protein (sum of all peptides) at each time point are plotted for proteins with no missing values in all 3 replicates of all 3 modes. The background shows the overall intensity change over 3 modes.
+<<linechart_intensity>>=
+dirlinechart='line_chart'
+dir.create(file.path(dirlinechart), showWarnings = FALSE)
+
+mock_i=grep('mock', colnames(proteins_full))
+hour18_i=grep('hour18', colnames(proteins_full))
+hour4_i=grep('hour4', colnames(proteins_full))
+a=matrix(NA, nrow=dim(proteins_full)[1],ncol=3)
+for (i in 1:dim(proteins_full)[1]) {
+a[i,] =c(mean(as.numeric(proteins_full[i,][mock_i])),
+    mean(as.numeric(proteins_full[i,][hour4_i])),
+    mean(as.numeric(proteins_full[i,][hour18_i])))
+}
+
+a=a[,2:3]-a[,1]
+a=data.frame(a)
+colnames(a)=c('hour4_mock','hour18_mock')
+a$protein=proteins_full$symbol
+a=data.frame(time=rep(c('hour4_mock','hour18_mock'), each=dim(a)[1]),
+             protein=rep(a$protein, 2),
+             values=c(a$hour4_mock,a$hour18_mock))
+##add layer 
+for (j in 1:dim(proteins_full)[1]) {
+ b=c(mean(as.numeric(proteins_full[j,][mock_i])),
+     mean(as.numeric(proteins_full[j,][hour4_i])),
+     mean(as.numeric(proteins_full[j,][hour18_i])))
+b=b[2:3]-b[1]
+   names(b)=c('hour4_mock','hour18_mock')
+   b=stack(b)
+   ggplot(a, aes(time,values, group=protein))+
+   geom_line(aes(color='gray'))+
+   theme(legend.position="none")+
+    scale_color_grey( start = 0.6, end = 0.6)+
+    geom_line(data=b, aes(ind, values, group=1), color='red')
+   
+  ggsave(file.path(dirlinechart,
+                   paste(proteins_full$ENSGid[j], '.pdf',sep='')),
+         width=7, height = 7)
+  ggsave(file.path(dirlinechart,
+                   paste(proteins_full$ENSGid[j], '.png',sep='')),
+         width=7, height = 7 )
+}
+@
+
+
+<<linechartWebpage, results='hide', echo=FALSE>>=
+page=openPage(file.path(dirlinechart,'index.html'), link.css='hwriter.css')
+file.copy(system.file('images','hwriter.css', package='hwriter'),
+          file.path(dirlinechart,'hwriter.css'))
+hwriteSidebar(position = c("left"),
+              link = c("../mainmenu.html"), size = 15, margin = 1, page = page)
+listedfiles=list.files(path=file.path(dirlinechart))
+hwrite('Line Charts for Proteins', heading=1,page=page)
+
+for (i in 1:3) { 
+  i_name=proteins_full$ENSGid[i]
+  hwrite(as.character(i_name), heading=3,page=page)
+  M = listedfiles[grep(paste(i_name,'.png', sep=''), listedfiles)]
+  L = matrix(listedfiles[grep(paste(i_name,'.pdf', sep=''), listedfiles)],ncol=1)
+  hwriteImage(M, link=L,page=page, width=300, hieight=300)
+}
+
+tar(file.path(dirlinechart,'SINV_line_charts.tar.gz'), files=file.path(dirlinechart))
+hwrite("[Download All Line Charts]", link=file.path('SINV_line_charts.tar.gz'), heading=3,page=page)
+closePage(page,splash=FALSE)
+@
+
+\section{Differential t test in protein level}
+
+\subsection{Moderated t-test for set enrichment}
+The aggregated mean intensity values for each protein are tested for enrichment between differnt states of infection, using a moderated t-test as implemented in the Bioconductor-package limma. p-values are corrected for multiple testing by the method of Benjamini-Hochberg.
+
+<<t_test,fig.path='t_test/'>>=
+dirTtest='t_test'
+dir.create(file.path(dirTtest), showWarnings = FALSE)
+
+for (sampless in sample_names) 
+  {assign(paste(sampless,'intensity', sep='_'), 
+  proteins[,grep(sampless,names(proteins))], 
+  envir = .GlobalEnv)}
+sample_combi=combn(sample_names,2,simplify=TRUE)
+
+for (i in 1:dim(sample_combi)[2]){
+  sample1=eval(parse(text = paste(sample_combi[1,i], 
+                                  'intensity',sep='_')))
+  sample2=eval(parse(text = paste(sample_combi[2,i], 
+                                  'intensity',sep='_')))
+X =sample1-sample2
+for (j in 1:length(sample_names)) {
+  X[,j] = X[,j] - median(X[,j],na.rm = TRUE)}
+fit=eBayes(lmFit(X))
+fit$p.adj=p.adjust(fit$p.value,method="BH")
+fit$p.adj[is.na(fit$p.adj)]=1
+name_comp=paste('diff',paste(sample_combi[,i],
+                             collapse='_'),sep='_')
+diff_table=data.frame(as.character(proteins$ENSGid),
+                      as.character(proteins$Know_RBP),
+                      fit$coefficients,
+                      fit$p.value,fit$p.adj)
+
+names(diff_table)=
+  c('ENSGid','known_RBP','coefficient','pvalue','p.adj')
+diff_table=diff_table[order(diff_table$p.adj,
+                            diff_table$coefficient),]
+diff_table$sig=NA
+diff_table$symbol=sapply(diff_table$ENSGid, function(x)
+  ENSGannotation$name[ENSGannotation$ensembl_gene_id== x])
+diff_table$symbol[listLen(diff_table$symbol)!=1]=NA
+diff_table$symbol=unlist(diff_table$symbol)
+diff_table$symbol[
+  grep('SV_',diff_table$ENSGid)]=
+  diff_table$ENSGid[grep('SV_',diff_table$ENSGid)]
+diff_table$sig[diff_table$p.adj<0.1]='*'
+diff_table$sig[diff_table$p.adj<0.01]='**'
+diff_table=diff_table[,c(1,7,2,3,4,5,6)]
+assign(paste(paste(sample_combi[,i], collapse='_'), 
+             'diff_table', sep='_'), 
+  diff_table, envir = .GlobalEnv)
+write.table(diff_table, file=file.path("t_test",
+            paste('diff_', paste(sample_combi[,i],
+                                collapse = '_'),'.txt',sep='')),
+            sep="\t",row.names =FALSE, quote=FALSE)
+col = ifelse(fit$p.adj <= 0.1, "orange", "gray")
+col[which(fit$p.adj <= 0.01)] = "red"
+col[which(fit$p.adj <= 0.1 & 
+            fit$coefficients < 0)] = "cyan"
+col[which(fit$p.adj <= 0.01 & 
+            fit$coefficients < 0)] = "blue"
+pairs(X,col=col, pch=20,
+        main=paste('diff',paste(sample_combi[,i],
+                                collapse = '_'),sep='_'))
+}
+@
+
+<<t_testWebpage, results='hide', echo=FALSE>>=
+page=openPage(file.path('t_test','index.html'), link.css='hwriter.css')
+file.copy(system.file('images','hwriter.css', package='hwriter'),
+          file.path('t_test','hwriter.css'))
+hwriteSidebar(position = c("left"),
+              link = c("../mainmenu.html"), size = 15, margin = 1, page = page)
+listedfiles=list.files(path=file.path('t_test'))
+hwrite("t test", heading=1,page=page)
+ for (i in 1:dim(sample_combi)[2]){
+  hwrite(paste("Scatter plot of proteins in comparisons of ",
+               sample_combi[1,i], ' and ', 
+               sample_combi[2,i],': ', sep=''), heading=3,page=page)
+  M = matrix(paste('t_test-',i,'.png', sep=''),ncol=1)
+  L = matrix(paste('t_test-',i,'.pdf', sep=''),ncol=1)
+  hwriteImage(M, link=L,page=page)
+}
+
+for (i in listedfiles[grep('diff', listedfiles)]) {
+  hwrite(paste("[Download text file:", i,"]"), link=i, page=page, br=TRUE)
+}
+closePage(page,splash=FALSE)
+@
+
+\subsection{Volcano plots}
+
+<<VolcanoPlot>>=
+voldir=file.path('VolcanoPlot')
+dir.create(voldir, showWarnings = FALSE)
+for (i in 1:dim(sample_combi)[2]){
+  sample1=eval(parse(text = paste(sample_combi[1,i], 
+                                  'intensity',sep='_')))
+  sample2=eval(parse(text = paste(sample_combi[2,i], 
+                                  'intensity',sep='_')))
+  X =sample1-sample2
+  for (j in 1:length(sample_names)) {
+    X[,j] = X[,j] - median(X[,j],na.rm = TRUE)}
+  fit=eBayes(lmFit(X))
+  fit$p.adj=p.adjust(fit$p.value,method="BH")
+  fit$p.adj[is.na(fit$p.adj)]=1
+  volplot=cbind(fit$coefficient,fit$p.adj)
+  colnames(volplot)=c('coefficients','p.adj')
+  volplot=data.frame(volplot)
+  volplot$name=proteins$symbol
+  head(volplot)
+  volplot=volplot[!is.na(volplot$coefficients),]
+  volplot$threshold = as.factor(abs(volplot$coefficients) > 2 & volplot$p.adj< 0.01)
+  
+##Construct the plot object
+p <- ggplot(volplot, aes(coefficients,-log10(p.adj), color=threshold))
+p + geom_point(size=0.5)
+p + geom_point() + 
+  geom_text(data=subset(volplot, abs(coefficients) > 2 ),
+            aes(coefficients,-log10(p.adj),label=name), angle=90,hjust = 0,nudge_y = 0.05) +
+  theme(legend.position = "none") +
+  xlim(c(-6, 6)) + ylim(c(0, 3)) +
+  xlab("log2 fold change") + ylab("-log10 p-value") +
+  labs(title = paste('Protein inteisity of ',sample_combi[1,i], ' comparing to ', sample_combi[2,i],sep=''))
+
+  ggsave(file.path(voldir,
+                    paste(paste('volcano',sample_combi[1,i], sample_combi[2,i],sep='_'), '.pdf',sep='')),
+          width=7, height=7)
+  ggsave(file.path(voldir,
+                    paste(paste('volcano',sample_combi[1,i], sample_combi[2,i],sep='_'), '.png',sep='')),
+           width=7, height=7)
+}
+@
+
+\subsection{A semi-quantified analysis for protein enrichment}
+\noindent A semi-quantified analysis of the protein enrichment in differnt states of infection. Generating tables contain proteins which have detected intensity values in 3 or 2 of the replications in a time point but have only 1 or 0 detected intensity in another.
+<<semi_quant>>=
+semi_dir=file.path('semi_quant')
+dir.create(semi_dir, showWarnings = FALSE)
+add_summary=function(proteinset){
+  h18_index=grep('18',colnames(proteinset))
+  h4_index=grep('4',colnames(proteinset))
+  mock_index=grep('mock',colnames(proteinset))
+  proteinset=cbind(
+    proteinset, hour18_total=apply(
+      proteinset,1, function(x) sum(!is.na(x[h18_index]))))
+  proteinset=cbind(
+    proteinset, hour4_total=apply(
+      proteinset,1, function(x) sum(!is.na(x[h4_index]))))
+  proteinset=cbind(
+    proteinset, mock_total=apply(
+      proteinset,1, function(x) sum(!is.na(x[mock_index]))))
+  proteinset
+}
+
+semi_hour4_mock=apply(
+  is.na(mock_intensity)-is.na(hour4_intensity), 1, 
+  function(x) sum(x))
+semi_hour4_mock_up=proteins[semi_hour4_mock>=2,]
+semi_hour4_mock_up=semi_hour4_mock_up[,c(1,2,3,6,9,12,5,8,11,4,7,10)]
+semi_hour4_mock_up=add_summary(semi_hour4_mock_up)
+write.table(semi_hour4_mock_up, file=
+              file.path(semi_dir,'semi_hour4_mock_up.txt'),
+              row.names=FALSE)
+
+semi_hour4_mock_down=proteins[semi_hour4_mock<=-2,]
+semi_hour4_mock_down=semi_hour4_mock_down[,c(1,2,3,6,9,12,5,8,11,4,7,10)]
+semi_hour4_mock_down=add_summary(semi_hour4_mock_down)
+write.table(semi_hour4_mock_down, file=
+              file.path(semi_dir,'semi_hour4_mock_down.txt'),
+              row.names=FALSE)
+
+semi_hour18_mock=apply(
+  is.na(mock_intensity)-is.na(hour18_intensity), 1, 
+  function(x) sum(x))
+semi_hour18_mock_up=proteins[semi_hour18_mock>=2,]
+semi_hour18_mock_up=semi_hour18_mock_up[,c(1,2,3,6,9,12,5,8,11,4,7,10)]
+semi_hour18_mock_up=add_summary(semi_hour18_mock_up )
+write.table(semi_hour18_mock_up, file=
+              file.path(semi_dir,'semi_hour18_mock_up.txt'),
+              row.names=FALSE)
+
+semi_hour18_mock_down=proteins[semi_hour18_mock<=-2,]
+semi_hour18_mock_down=semi_hour18_mock_down[,c(1,2,3,6,9,12,5,8,11,4,7,10)]
+semi_hour18_mock_down=add_summary(semi_hour18_mock_down)
+write.table(semi_hour18_mock_down, 
+            file=file.path(semi_dir,'semi_hour18_mock_down.txt'),
+            row.names=FALSE)
+
+semi_hour18_hour4=apply(
+  is.na(hour4_intensity)-is.na(hour18_intensity), 1, 
+  function(x) sum(x))
+semi_hour18_hour4_up=proteins[semi_hour18_hour4>=2,]
+semi_hour18_hour4_up=semi_hour18_hour4_up[,c(1,2,3,6,9,12,5,8,11,4,7,10)]
+semi_hour18_hour4_up=add_summary(semi_hour18_hour4_up)
+write.table(semi_hour18_hour4_up, 
+            file=file.path(semi_dir,'semi_hour18_hour4_up.txt'),
+            row.names=FALSE)
+
+semi_hour18_hour4_down=proteins[semi_hour18_hour4<=-2,]
+semi_hour18_hour4_down=semi_hour18_hour4_down[,c(1,2,3,6,9,12,5,8,11,4,7,10)]
+semi_hour18_hour4_down=add_summary(semi_hour18_hour4_down)
+write.table(semi_hour18_hour4_down, 
+            file=file.path(semi_dir,'semi_hour18_hour4_down.txt'),
+            row.names=FALSE)
+@
+
+<<semi_compare, results='hide', echo=FALSE>>=
+page=openPage(file.path(semi_dir,'index.html'), link.css='hwriter.css')
+file.copy(system.file('images','hwriter.css', package='hwriter'),
+          file.path(semi_dir,'hwriter.css'))
+hwriteSidebar(position = c("left"),
+              link = c("../mainmenu.html"), size = 15, margin = 1, page = page)
+listedfiles=list.files(path=file.path(semi_dir))
+hwrite("semi-quantified analysis of the proteints with missing values", 
+       heading=1,page=page)
+ for (i in 1:dim(sample_combi)[2]){
+   for (j in c('down','up')) {
+  hwrite(paste("Semi-quantative analysis of proteins in ",
+               j,'-relagulated', sample_combi[1,i], ' to ', 
+               sample_combi[2,i],': ', sep=''),
+         link=paste('semi_',sample_combi[1,i],'_',
+                    sample_combi[2,i],'_', j, '.txt', sep=''),
+         page=page, br=TRUE)
+     semi_table=read.table(file.path(semi_dir,paste('semi_',sample_combi[1,i],'_',
+                    sample_combi[2,i],'_', j, '.txt', sep='')), header=TRUE)
+     semi_table=as.matrix(semi_table)
+     hwrite(semi_table, page=page, br=TRUE )
+}}
+
+closePage(page,splash=FALSE)
+@
+
+\section{Gene set enrichment analysis for differentially expressed proteins} 
+Gene set enrichment analysis is performed by applying Fisher’s exact test to categories from GO, Interpro, Pfam, and Uniprot annotations. 
+
+\noindent Gene set enrichment analysis for enriched genes in sets of comparisons.
+<<GSEA>>=
+GSEAdir='GSEA'
+dir.create(file.path(GSEAdir), showWarnings = FALSE)
+for (i in 1:dim(sample_combi)[2]){
+  enrich_table=eval(parse(
+    text=paste(paste(sample_combi[,i], 
+                     collapse='_'), 'diff_table', sep='_')))
+  
+  enrich_table=enrich_table[enrich_table$p.adj<0.1,]
+  for (j in 1:2){
+  GSEA = list()
+  if (sample_combi[j,i]==sample_combi[1,i]){
+    Test_Geneset=enrich_table[enrich_table$coefficient>0,]}
+  else {Test_Geneset=enrich_table[enrich_table$coefficient<0,]}
+  write.table(Test_Geneset, 
+              file=file.path(GSEAdir,
+                             paste('EnrichedEnsgid_',
+                                   sample_combi[j,i], '_', 
+                                   sample_combi[3-j,i],'.txt',
+                                   sep='')),row.names = FALSE)
+  GSEA=doGSEA(
+   as.character(Test_Geneset), 
+   as.character(proteins$ENSGid),ENSG2category, k=3)
+  dir.create(file.path(GSEAdir), showWarnings = FALSE)
+  save(GSEA, file=file.path(
+    GSEAdir,paste('Enriched',sample_combi[j,i],
+                    sample_combi[3-j,i],'GSEA', sep='_')))
+  assign(paste('Enriched',sample_combi[j,i],
+               sample_combi[3-j,i],'GSEA', sep='_'),
+         GSEA, envir= .GlobalEnv)
+}}
+@
+
+\noindent The tables of the GSEA are written.
+<<>>=
+dir.create(file.path(GSEAdir,"table"),
+           showWarnings=FALSE,recursive = TRUE)
+file.copy(system.file("images","hwriter.css",
+                      package="hwriter"),
+          file.path(GSEAdir,"hwriter.css"))
+for (i in 1:dim(sample_combi)[2]){
+  for (j in 1:2){
+    GSEAname=eval(parse(text=paste(
+      'Enriched',sample_combi[j,i],
+      sample_combi[3-j,i],'GSEA', sep='_')))
+    hwriteGSEA(GSEAname, 
+             dir = file.path(GSEAdir,"table"), 
+             GeneAnnotation=ENSGannotation)
+    hwriteGSEAtext(GSEAname,
+               file = file.path(GSEAdir,
+                                paste(paste(
+      'Enriched',sample_combi[j,i],
+      sample_combi[3-j,i],'GSEA', sep='_'),
+                                      ".txt",sep='')),
+               GeneAnnotation=ENSGannotation)
+    hwriteGSEArevigo(GSEAname, 
+               file = file.path(paste(
+                   paste('Enriched',sample_combi[j,i],
+                         sample_combi[3-j,i],'GSEA', sep='_'),
+                                      "revigo.txt",sep='')),
+               GeneAnnotation=ENSGannotation, padj = 0.4)
+}}
+@
+
+
+<<GSEA_Webpage, results='hide', echo=FALSE>>=
+page = openPage(file.path(GSEAdir, "index.html"),link.css = "hwriter.css")
+hwriteSidebar(page=page, link="../mainmenu.html")
+hwrite(sprintf("Gene set enrichment analysis"),heading=1,page=page)
+for (i in 1:dim(sample_combi)[2]){
+  for (j in 1:2){
+    GSEAname=eval(parse(text=paste('Enriched',sample_combi[j,i],
+                                   sample_combi[3-j,i],'GSEA', sep='_')))
+    hwrite(paste('The GSEA of ',
+                 sample_combi[j,i], ' to ',
+                 sample_combi[3-j,i],': ', sep='' ),
+           headings=3, page=page)
+    hwrite("[Download the list of enriched gene IDs]",
+           link=file.path(paste('EnrichedEnsgid_',
+                                   sample_combi[j,i], '_', 
+                                   sample_combi[3-j,i],'.txt',
+                                   sep='')), page=page,br=FALSE)
+    Sources = unique(GSEAname$T$source[GSEAname$T$padj <= 1])
+    if (length(Sources)>0){
+      hwrite("table of enriched gene sets",link=file.path("table","index.html"),
+       target="_GSEA",page=page,br=TRUE)
+      hwrite("[Download as text file]",link=file.path(paste('Enriched_',
+                                   sample_combi[j,i], '_', 
+                                   sample_combi[3-j,i],'_GSEA.txt',
+                                   sep='')), page=page,br=FALSE)
+      hwrite("[Download text file for revigo GO enrichment visualization]",
+       link=file.path(paste('Enriched_',
+                                   sample_combi[j,i], '_', 
+                                   sample_combi[3-j,i],'_GSEArevigo.txt',
+                                   sep='')), page=page,br=FALSE)
+      hwrite(" Upload the text file on revigo",link="http://revigo.irb.hr",page=page,br=FALSE)
+      }
+    M = NULL
+    for (s in Sources) {
+      GSEAnew = GSEA
+      GSEAnew$T = GSEAnew$T[GSEAnew$T$source == s,]
+      pdf(width=10,height=7,file=file.path(GSEAdir,sprintf("GSEA-%s.pdf",s)))
+      x = plotGSEA(GSEAnew, main = s, maxp = 0.05,nrOfSets = 0, cex=0.6)
+      dev.off()
+  h = x / 20 + 0.25
+  pdf(width=9,height=h*7,file=file.path(GSEAdir,sprintf("GSEA-%s.pdf",s)))
+  plotGSEA(GSEAnew, main = s, maxp = 0.05,nrOfSets = 0, cex=1)
+  dev.off()
+  png(width=685,height=h*480,file=file.path(GSEAdir,sprintf("GSEA-%s.png",s)))
+  x = plotGSEA(GSEAnew, main = s, maxp = 0.05,nrOfSets = 0, cex=1)
+  dev.off()
+  if (x > 0) {
+    M = rbind(M, c(sprintf("GSEA-%s.%s",s,c("png","pdf"))))
+    row.names(M)[nrow(M)] = s
+  }
+}
+if (!is.null(M)) {
+  hwrite("Bar plots of enriched gene sets (FDR 0.05)",heading=1,page=page)
+  hwriteImage(M[,1,drop=FALSE],link=M[,1,drop=FALSE],page=page)
+} else {
+  hwrite("no enriched categories",page=page,heading=3)
+}}}
+closePage(page,splash=FALSE)
+@
+
+<<webpage,echo=FALSE,results='hide'>>=
+
+resultdir = '.'
+file.copy(system.file("images","hwriter.css",package="hwriter"),
+          file.path(resultdir,"hwriter.css"))
+page = openPage(file.path(resultdir,"index.html"),link.css="hwriter.css")
+hwriteSidebar(page=page, link="mainmenu.html")
+hwrite(sprintf("Comparison of protein intensity in 
+               cells infected with Sindbis virus in 
+               different states"),heading=1,page=page)
+closePage(page,splash = FALSE)
+
+page = openPage(file.path(resultdir,"mainmenu.html"),link.css="hwriter.css",
+                css=" body { background-color: #dddddd } ")
+hwrite("<small>",table=FALSE,page=page)
+hwrite("Peptide Mapping",link="peptideMapping/index.html",br=TRUE,page=page,target="_parent")
+hwrite("t test",link="t_test/index.html",br=TRUE,page=page,target="_parent")
+hwrite("Semi-quantative comparison of protein intensities",link="semi_quant/index.html",br=TRUE,page=page,target="_parent")
+hwrite("Line Chart",link="line_chart/index.html",br=TRUE,page=page,target="_parent")
+hwrite("Heatmap",link="heatmap/index.html",br=TRUE,page=page,target="_parent")
+hwrite("GSEA",link="GSEA/index.html",br=TRUE,page=page,target="_parent")
+hwrite("Source code",heading=3,page=page)
+hwrite("Documented source code and data",link="scripts.html",br=TRUE,page=page,target="_parent")
+hwrite("</small>",table=FALSE,page=page)
+closePage(page,splash = FALSE)
+
+page = openPage(file.path(resultdir,"scripts.html"),link.css="hwriter.css")
+hwriteSidebar(page=page, link="mainmenu.html")
+hwrite("Documented source code and data",heading=1,page=page)
+hwrite("package vignette (pdf)", link="pepcompare_sinv.pdf",br=TRUE,page=page)
+hwrite("source code (Rnw, knitr-Sweave-file)", link="pepcompare_sinv.Rnw",br=TRUE,page=page)
+closePage(page,splash = FALSE)
+@
+
+
+\end{document}
