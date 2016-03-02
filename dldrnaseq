@@ -1,0 +1,108 @@
+##load packages
+
+library(org.Hs.eg.db)
+
+###traverseALLdirectories TCGA
+source('Module_A.r')
+
+TraverseAllDirectories(
+  entryPoint = 
+    "https://tcga-data.nci.nih.gov/tcgafiles/
+  ftp_auth/distro_ftpusers/anonymous/tumor/", 
+  fileLabel ="DirectoryTraverseResult");
+
+install.packages(
+  c("HGNChelper", "RCurl", "httr", 
+    "stringr", "digest", "bitops"), dependencies=T)
+
+####Download all RNAseqV2 data for all cancer types
+
+DirRnaseqV2='RNAseq'
+for (cancer_type in c('ACC','BLCA', 'BRCA', 'CESC', 'COAD', 'DLBC', 
+            'ESCA', 'GBM', 'HNSC', 'KICH', 'KIRC', 'KIRP', 
+            'LAML', 'LGG', 'LIHC', 'LUAD', 'LUSC', 'OV', 
+            'Prnaseqv2D', 'PRAD', 'READ', 'SARC', 'SKCM', 
+            'STAD', 'THCA', 'UCEC', 'UCS')) {
+  DownloadRNASeqData(
+  traverseResultFile = "./DirectoryTraverseResult_Feb-26-2016.rda", 
+  saveFolderName = file.path(DirRnaseqV2), 
+  cancerType =cancer_type, assayPlatform = "RNASeqV2", 
+  dataType = c("rsem.genes.results", "rsem.genes.normalized_results"));
+}
+
+####Read and render datasets into a megalist
+TCGA_RNAseqv2=list()
+for (cancer_type in 
+     c('ACC','BLCA', 'BRCA', 'CESC', 'COAD', 'DLBC', 
+       'ESCA', 'GBM', 'HNSC', 'KICH', 'KIRC', 'KIRP', 
+       'LAML', 'LGG', 'LIHC', 'LUAD', 'LUSC', 'OV',
+       'Prnaseqv2D', 'PRAD', 'READ', 'SARC', 'SKCM', 
+       'STAD', 'THCA', 'UCEC', 'UCS')){
+TCGA_RNAseqv2[[cancer_type]]=list()
+}
+TCGA_RNAseqv2$ACC
+
+File_list=list.files(file.path(DirRnaseqV2))
+File_list_result=File_list[grep('genes.results',File_list)]
+File_list_norm_result=File_list[grep('genes.normalized',File_list)]
+for (file in File_list_result){
+  cancer_type=unlist(strsplit(file, '__'))[1]
+  rnaseqv2=read.table(file.path(DirRnaseqV2, file), 
+  sep='\t', header=TRUE, row.names=1,stringsAsFactors = FALSE)
+  rnaseqv2=rnaseqv2[,-1]
+  raw_count=rnaseqv2[,grep('raw', rnaseqv2[1,])]
+  raw_count=raw_count[-1,]
+  scaled_estimate=rnaseqv2[,grep('scaled',rnaseqv2[1,])]
+  scaled_estimate=scaled_estimate[-1,]
+  names(scaled_estimate)=sapply(
+  names(scaled_estimate), function(x) 
+    paste(head(unlist(strsplit(x, "[.]")),-1), collapse ='.'))
+ TCGA_RNAseqv2[[cancer_type]][['RawCount']] = raw_count
+ TCGA_RNAseqv2[[cancer_type]][['ScaledEstimate']] = scaled_estimate
+ 
+#   saveRDS(raw_count, file=file.path(
+#     DirRnaseqV2, paste('raw_count',
+#                        cancer_type, 
+#                        unlist(strsplit(file, '__'))[3], 
+#                        'rda',sep='.')))
+#    saveRDS(scaled_estimate, file=file.path(
+#     DirRnaseqV2, paste('scaled_estimate',
+#                        unlist(strsplit(file, '__'))[1], 
+#                        unlist(strsplit(file, '__'))[3], 
+#                        'rda',sep='.')))
+}
+  
+
+for (file in File_list_norm_result){
+  norm_rnaseqv2=read.table(file.path(DirRnaseqV2, file),
+  sep='\t', header=TRUE, row.names=1,stringsAsFactors = FALSE)
+  norm_rnaseqv2=read.table(file.path(DirRnaseqV2, file),
+                           sep='\t', header=TRUE, row.names=1,stringsAsFactors = FALSE)
+  
+  norm_rnaseqv2=norm_rnaseqv2[-1,]
+ TCGA_RNAseqv2[[cancer_type]][['NormCount']] = norm_rnaseqv2
+ 
+#    saveRDS(scaled_estimate, file=file.path(
+#     DirRnaseqV2, paste('normalized_count',
+#                        unlist(strsplit(file, '__'))[1], 
+#                        unlist(strsplit(file, '__'))[3], 
+#                        'rda',sep='.')))
+ 
+} 
+###Convert gene names into ENSEMBL names
+# x <- org.Hs.egENSEMBL
+# mapped_genes <- mappedkeys(x)
+# xx <- as.list(x[mapped_genes])
+# unlist(xx[c('145376','145389')]) 
+# ####Convert the Entrez ID to ENSEMBL ID
+# ENSGid=xx[sapply(row.names(raw_count), 
+#   function(x) unlist(strsplit(x, "[|]"))[2])]
+# ENSGid[listLen(ENSGid)!=1]=NA
+# ENSGid=unname(unlist(ENSGid))
+# row.names(raw_count)=ENSGid
+# 
+# row.names(scaled_estimate)=xx[
+#   sapply(row.names(scaled_estimate), 
+#          function(x) unlist(strsplit(x, "[|]"))[2])]
+# scaled_estimate[1:8,1:8]
+
