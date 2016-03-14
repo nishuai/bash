@@ -31,12 +31,7 @@ library(hwriter)
 library(RColorBrewer)
 library(Biostrings)
 library(pheatmap)
-load(file.path('inputdata','enigmRBP.rda'))
-load(file.path('inputdata','ProtFeatures.rda'))
-load(file.path('inputdata','Index.rda'))
-load(file.path('inputdata','ENSG2category.rda'))
-load(file.path('inputdata','ENSGannotation.rda'))
-SV_seq=readAAStringSet(file.path('inputdata','prot_sequences.txt'))
+nces.txt'))
 source(file.path('R','doGSEA.R'))
 source(file.path('R','hwriteSidebar.R'))
 @
@@ -85,9 +80,7 @@ MapProt2Ensg=function(protein_list){
 \noindent Extract single matched peptides (peptides can only be mapped to a single gene).
 The name of the viral proteins is kept in the conversion from protein id to ENSEMBL gene id.
 <<single_mapped_peps>>=
-ProtIDs=mapPeptides(PeptideSet=input_raw$sequence, 
-                    c(ProtFeatures$ProtSeq,SV_seq),
-                          verbose=FALSE)
+
 Ensgid=MapProt2Ensg(ProtIDs)
 Ensgid[grep('SV_', ProtIDs)]=ProtIDs[grep('SV_', ProtIDs)]
 @
@@ -337,17 +330,7 @@ for (i in 1:dim(sample_combi)[2]){
   sample2=eval(parse(text = paste(sample_combi[2,i], 
                                   'intensity',sep='_')))
 X =sample1-sample2
-for (j in 1:length(sample_names)) {
-  X[,j] = X[,j] - median(X[,j],na.rm = TRUE)}
-fit=eBayes(lmFit(X))
-fit$p.adj=p.adjust(fit$p.value,method="BH")
-fit$p.adj[is.na(fit$p.adj)]=1
-name_comp=paste('diff',paste(sample_combi[,i],
-                             collapse='_'),sep='_')
-diff_table=data.frame(as.character(proteins$ENSGid),
-                      as.character(proteins$Know_RBP),
-                      fit$coefficients,
-                      fit$p.value,fit$p.adj)
+
 
 names(diff_table)=
   c('ENSGid','known_RBP','coefficient','pvalue','p.adj')
@@ -411,19 +394,7 @@ closePage(page,splash=FALSE)
 <<VolcanoPlot>>=
 voldir=file.path('VolcanoPlot')
 dir.create(voldir, showWarnings = FALSE)
-for (i in 1:dim(sample_combi)[2]){
-  sample1=eval(parse(text = paste(sample_combi[1,i], 
-                                  'intensity',sep='_')))
-  sample2=eval(parse(text = paste(sample_combi[2,i], 
-                                  'intensity',sep='_')))
-  X =sample1-sample2
-  for (j in 1:length(sample_names)) {
-    X[,j] = X[,j] - median(X[,j],na.rm = TRUE)}
-  fit=eBayes(lmFit(X))
-  fit$p.adj=p.adjust(fit$p.value,method="BH")
-  fit$p.adj[is.na(fit$p.adj)]=1
-  volplot=cbind(fit$coefficient,fit$p.adj)
-  colnames(volplot)=c('coefficients','p.adj')
+
   volplot=data.frame(volplot)
   volplot$name=proteins$symbol
   head(volplot)
@@ -573,8 +544,7 @@ for (i in 1:dim(sample_combi)[2]){
                                    sample_combi[j,i], '_', 
                                    sample_combi[3-j,i],'.txt',
                                    sep='')),row.names = FALSE)
-  GSEA=doGSEA(
-   as.character(Test_Geneset), 
+
    as.character(proteins$ENSGid),ENSG2category, k=3)
   dir.create(file.path(GSEAdir), showWarnings = FALSE)
   save(GSEA, file=file.path(
@@ -651,12 +621,7 @@ for (i in 1:dim(sample_combi)[2]){
       hwrite(" Upload the text file on revigo",link="http://revigo.irb.hr",page=page,br=FALSE)
       }
     M = NULL
-    for (s in Sources) {
-      GSEAnew = GSEA
-      GSEAnew$T = GSEAnew$T[GSEAnew$T$source == s,]
-      pdf(width=10,height=7,file=file.path(GSEAdir,sprintf("GSEA-%s.pdf",s)))
-      x = plotGSEA(GSEAnew, main = s, maxp = 0.05,nrOfSets = 0, cex=0.6)
-      dev.off()
+
   h = x / 20 + 0.25
   pdf(width=9,height=h*7,file=file.path(GSEAdir,sprintf("GSEA-%s.pdf",s)))
   plotGSEA(GSEAnew, main = s, maxp = 0.05,nrOfSets = 0, cex=1)
