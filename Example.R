@@ -15,4 +15,4 @@ get_os <- function(){
 }
 
 Syname=as.character(get_os())
-print(paste0("Hellow, ", as.character(Sys.info()[8]), ", "user of ", Syname, "system, you have successfully loaded me into your environment, good job!")
+print(paste0("Hellow, ", as.character(Sys.info()[8]), ", "user of ", Syname, "system, you have successfully loaded me into your environment, good job!"))
