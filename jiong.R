@@ -1,3 +1,4 @@
+library(ggplot2)
 f <- function(x) 1/(x^2-1)
 x <- seq(-3,3, by=0.001)
 y <- f(x)
