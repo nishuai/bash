@@ -6,7 +6,7 @@ d <- data.frame(x=x,y=y)
 
 p <- ggplot()
 p <- p+geom_rect(fill = "white",color="black",size=3,
-                 aes(NULL, NULL,xmin=-3, xmax=3,
+                 aes(xmin=-3, xmax=3,
                      ymin=-3,ymax=3, alpha=0.1))
 
 p <- p + geom_line(data=d, aes(x,y), size=3)+ylim(-3,3)
@@ -21,4 +21,4 @@ p <- p + theme_bw() +
           panel.border=element_blank())
 
 p <- p+xlab("")+ylab("")
-p
+print(p)
