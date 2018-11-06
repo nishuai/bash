@@ -7,41 +7,40 @@
 # bed file defining coordinates of the panel, output directory (gwd by default)
 #################################################################
 
-##load packages
-library('Biostrings')
-
 ####get input parameters
 print('Start computing')
 args = commandArgs(trailingOnly=TRUE)
 training_dir =NULL; output_dir=NULL
-if (length(args)<3) {
+if (length(args)<6) {
   stop("Usage: Rscript Training_rendering.R training_dir ref_seq bed_file output_dir", call.=FALSE)
 } else if (length(args)>4) {
   stop("Usage: Rscript Training_rendering.R training_dir ref_seq bed_file output_dir", call.=FALSE)
 }
 
-training_dir = args[1]  #Assume the healthy_subjects folder in under the working dir
+training_dir = args[1]  
 output_dir= args[4]
-if (is.null(output_dir)) output_dir='.'  #Assume the healthy_subjects folder in under the working dir
-training=list.files(path=training_dir,pattern="freq$") # list all healthy subject pileup data files; require at least two or more normal samples
+if (is.null(output_dir)) output_dir='.'  
+training_files=list.files(path=training_dir,pattern="pileup.txt$") # list all healthy subject pileup data files; require at least two or more normal samples
+print(training_files)
 
 ###generate a master atgc file (each training may have missing positions)
-args=c('D:/wrk/TNER-master/training/', 'D:/wrk/TNER-master/ref_seqs_panel.txt',
-       'D:/wrk/TNER-master/Target_v2.call.bed','.')
-ref_seq=readDNAStringSet(args[2])
+
+ref_seq=scan(args[2], what='character')
+ref_seq=ref_seq[seq(2, length(ref_seq), 2)]
+ref_seq=paste0(ref_seq, collapse = '')
+
 bed_file=read.table(args[3], stringsAsFactors = FALSE)
 all_positions=unlist(apply(bed_file,1, function(x) {(as.numeric(x[2])+1):x[3]}))
 chr=rep(bed_file$V1, c(bed_file$V3 - bed_file$V2))
-aa=toString(ref_seq)
-aa=unlist(strsplit(aa,', '))
-ref_seq=unlist(strsplit(paste(aa, collapse =''),''))
+
 master_acgt=data.frame(chr=chr, position=all_positions, ref_base=ref_seq)
 master_acgt$id=paste(master_acgt$chr, master_acgt$position, sep='_')
 saveRDS(master_acgt, 'master_acgt.rds')
 
 ####read into each training acgt data and render for missing bases
 All_training=list()
-for (filename in list.files(training_dir)){
+for (filename in training_files){
+  print(paste('processing ', filename))
   
   training=read.table(file.path(training_dir, filename), stringsAsFactors = FALSE, header = TRUE)
   training=training[,-dim(training)[2]]
@@ -50,8 +49,35 @@ for (filename in list.files(training_dir)){
   bb=merge(master_acgt, training, by='id', all=TRUE)
   row.names(bb)=bb$id
   bb=bb[,c(2,3,4,9:12)]
-  colnames(bb)=c('chr','position','ref_base','A','C','G','T')
+  colnames(bb)=c('CHR','POSITION','REF','A','C','G','T')
   All_training[[filename]]=bb
 }
 
 saveRDS(All_training, 'All_training.rds')
+
+####output back ground error rate file
+setwd('D:/wrk/TNER-master/')
+All_training=readRDS('All_training.rds')
+##For each training sample, not covered regions are represented as 0, the mean 
+##error rate estimation for missing regions would be estimated by other samples
+nt_matrix=lapply(All_training, function(x) {a=x[,4:7]; a[is.na(a)]=0; return (a)})
+
+
+All_nt_matrix=Reduce('+', nt_matrix)
+###Check the coverage of all training samples
+###averge coverage of each 10 bases
+pdf('overall_training_coverage.pdf')
+aa=rowSums(All_nt_matrix)
+plot(colMeans(matrix(aa, nrow=300)), main='Overall coverage of all training \n samples, every 300 nt', pch='.', type='l')
+dev.off()
+
+##generate site specific bg error rate
+All_nt_rate=All_nt_matrix/rowSums(All_nt_matrix)
+hs_bg_ave=cbind(All_training[[1]][,1:3],All_nt_rate)
+saveRDS(hs_bg_ave, 'All_bg_ave.rds')
+##generate depth count for each base
+depth_count=matrix(rep(rowSums(All_nt_matrix), 4), ncol=4)
+rownames(depth_count)= rownames(All_nt_matrix)
+colnames(depth_count)=colnames(All_nt_matrix)
+saveRDS(depth_count, 'All_depth_count.rds')
+
